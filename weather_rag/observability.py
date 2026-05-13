@@ -38,12 +38,33 @@ class Observer:
 
     def print_tool_start(self, name: str, args: dict[str, Any]) -> None:
         if self.echo:
-            print(f"[tool] {name} args={json.dumps(args, ensure_ascii=True)}")
+            print()
+            print(f"> Tool: {name}")
+            print(f"  args: {json.dumps(args, ensure_ascii=True)}")
 
     def print_tool_done(self, name: str, *, success: bool, latency_ms: float) -> None:
         if self.echo:
             state = "ok" if success else "failed"
-            print(f"[obs] {name} {state} latency={latency_ms:.2f}ms")
+            print(f"  status: {state} | latency: {latency_ms:.2f} ms")
+
+    def print_retrieval_hits(self, hits: list[dict[str, Any]]) -> None:
+        if not self.echo:
+            return
+        print("  retrieval top-k:")
+        if not hits:
+            print("    no candidates")
+            return
+        for hit in hits:
+            rank = hit.get("rank", "?")
+            score = hit.get("score")
+            passed = "pass" if hit.get("passed") else "filtered"
+            source = hit.get("source", "unknown")
+            chunk_id = hit.get("chunk_id", "-")
+            preview = str(hit.get("preview", "")).replace("\n", " ")
+            score_text = f"{float(score):.4f}" if isinstance(score, int | float) else str(score)
+            print(f"    {rank}. score={score_text} [{passed}] source={source} chunk={chunk_id}")
+            if preview:
+                print(f"       {preview}")
 
     def print_llm_usage(
         self,
@@ -61,9 +82,24 @@ class Observer:
         completion = usage.get("completion_tokens")
         total = usage.get("total_tokens")
         if total is None:
-            print(f"[llm] {provider}:{model} phase={phase} latency={latency_ms:.2f}ms tokens=unreported")
+            print()
+            print(f"> LLM: {provider}:{model}")
+            print(f"  phase: {phase} | latency: {latency_ms:.2f} ms | tokens: unreported")
             return
+        print()
+        print(f"> LLM: {provider}:{model}")
         print(
-            f"[llm] {provider}:{model} phase={phase} latency={latency_ms:.2f}ms "
-            f"tokens prompt={prompt} completion={completion} total={total}"
+            f"  phase: {phase} | latency: {latency_ms:.2f} ms | "
+            f"tokens: prompt={prompt}, completion={completion}, total={total}"
         )
+
+    def print_header(self, *, provider: str, model: str, rag_backend: str, log_file: Path) -> None:
+        if not self.echo:
+            return
+        print("Weather RAG CLI Agent")
+        print("=====================")
+        print(f"LLM          : {provider}:{model}")
+        print(f"RAG backend  : {rag_backend}")
+        print(f"Logs         : {log_file}")
+        print("Commands     : exit, quit")
+        print()

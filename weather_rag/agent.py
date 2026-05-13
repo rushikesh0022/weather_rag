@@ -69,7 +69,9 @@ class Agent:
             )
 
         if stream:
-            print("Assistant: ", end="", flush=True)
+            print()
+            print("Assistant")
+            print("---------")
 
         timer = Timer.start()
         chunks: list[str] = []
@@ -110,6 +112,9 @@ class Agent:
             error = str(exc)
             success = False
         latency_ms = timer.ms()
+        retrieval_hits = []
+        if tool_name == "search_polity_document":
+            retrieval_hits = list(getattr(self.tools[tool_name], "last_hits", []) or [])
         self.observer.log(
             "tool_call",
             name=tool_name,
@@ -117,7 +122,10 @@ class Agent:
             latency_ms=latency_ms,
             success=success,
             error=error,
+            retrieval_top_k=retrieval_hits if retrieval_hits else None,
         )
+        if tool_name == "search_polity_document":
+            self.observer.print_retrieval_hits(retrieval_hits)
         self.observer.print_tool_done(tool_name, success=success, latency_ms=latency_ms)
         return ToolObservation(
             tool=tool_name,

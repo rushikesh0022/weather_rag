@@ -6,7 +6,8 @@ A command-line agent for the interview assignment. It can:
 - fetch current weather from Open-Meteo
 - chain both tools in one turn, such as asking for the weather where the Lok Sabha sits
 - stream only the final LLM answer in the CLI
-- write JSONL observability records for LLM calls, tool calls, and weather API calls
+- show RAG top-k retrieval hits with scores in the CLI
+- write JSONL observability records for LLM calls, tool calls, retrieval hits, and weather API calls
 
 The PDF asks for `gpt-4o`; this implementation also supports Gemini and DeepSeek because the local project notes target those providers. Set `LLM_PROVIDER=openai`, `gemini`, `deepseek`, or leave it as `auto`.
 
@@ -63,3 +64,5 @@ logs/eval_observability.jsonl
 ```
 
 Each record includes timestamp, event type, name/provider, latency, success/failure, and token usage for LLM calls when the provider returns it. Weather and RAG tool calls report latency and success but do not pretend to have token counts.
+
+When the RAG tool runs, the terminal prints the retrieved top-k candidates with score, pass/filter status, source backend, chunk id, and a compact preview. The same data is stored on the `tool_call.retrieval_top_k` field in JSONL.

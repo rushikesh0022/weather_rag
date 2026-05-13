@@ -58,6 +58,7 @@ class PolityRetriever:
         self.observer = observer
         self.backend_name = "uninitialized"
         self.backend: ChromaBackend | LexicalBackend | None = None
+        self.last_hits: list[dict[str, Any]] = []
 
     def ensure_ready(self) -> None:
         if self.backend:
@@ -89,10 +90,22 @@ class PolityRetriever:
     def __call__(self, query: str) -> str:
         direct = direct_polity_fact(query)
         if direct:
+            self.last_hits = [
+                {
+                    "rank": 1,
+                    "score": 1.0,
+                    "passed": True,
+                    "source": "direct_fact",
+                    "chunk_id": "lok_sabha_location",
+                    "preview": direct,
+                }
+            ]
             return direct
         self.ensure_ready()
         assert self.backend is not None
-        return self.backend.search(query)
+        result = self.backend.search(query)
+        self.last_hits = self.backend.last_hits
+        return result
 
 
 class ChromaBackend:
@@ -100,6 +113,7 @@ class ChromaBackend:
         self.settings = settings
         self.observer = observer
         self.collection: Any | None = None
+        self.last_hits: list[dict[str, Any]] = []
 
     def ensure_ready(self) -> None:
         import chromadb
@@ -147,10 +161,23 @@ class ChromaBackend:
         )
         documents = result.get("documents", [[]])[0]
         distances = result.get("distances", [[]])[0]
+        metadatas = result.get("metadatas", [[]])[0]
         if not documents:
+            self.last_hits = []
             return "NO_RELEVANT_CONTEXT: Vector store returned no results."
 
         scored = [(doc, 1.0 - float(distance)) for doc, distance in zip(documents, distances)]
+        self.last_hits = [
+            {
+                "rank": rank,
+                "score": round(score, 4),
+                "passed": score >= self.settings.chroma_relevance_threshold,
+                "source": "chroma",
+                "chunk_id": (metadatas[rank - 1] or {}).get("chunk_id") if rank - 1 < len(metadatas) else None,
+                "preview": compact_preview(doc),
+            }
+            for rank, (doc, score) in enumerate(scored, start=1)
+        ]
         best_score = scored[0][1]
         relevant = [doc for doc, score in scored if score >= self.settings.chroma_relevance_threshold]
         if not relevant:
@@ -167,6 +194,7 @@ class LexicalBackend:
         self.observer = observer
         self.index_path = settings.lexical_dir / "index.json"
         self.index: dict[str, Any] | None = None
+        self.last_hits: list[dict[str, Any]] = []
 
     def ensure_ready(self) -> None:
         self.settings.lexical_dir.mkdir(parents=True, exist_ok=True)
@@ -198,16 +226,30 @@ class LexicalBackend:
         assert self.index is not None
         query_tokens = tokenize(query)
         if not query_tokens:
+            self.last_hits = []
             return "NO_RELEVANT_CONTEXT: Empty search query."
 
         scores = score_query(self.index, query_tokens)
         if not scores:
+            self.last_hits = []
             return "NO_RELEVANT_CONTEXT: Lexical index returned no candidates."
 
         best_id, best_score = scores[0]
+        top_scores = scores[: self.settings.top_k]
+        self.last_hits = [
+            {
+                "rank": rank,
+                "score": round(score, 4),
+                "passed": score >= self.settings.relevance_threshold,
+                "source": "lexical",
+                "chunk_id": chunk_id,
+                "preview": compact_preview(self.index["chunks"][str(chunk_id)]["text"]),
+            }
+            for rank, (chunk_id, score) in enumerate(top_scores, start=1)
+        ]
         relevant = [
             self.index["chunks"][str(chunk_id)]["text"]
-            for chunk_id, score in scores[: self.settings.top_k]
+            for chunk_id, score in top_scores
             if score >= self.settings.relevance_threshold
         ]
         if not relevant:
@@ -275,6 +317,13 @@ def score_query(index: dict[str, Any], query_tokens: list[str]) -> list[tuple[in
         if score > 0:
             scores.append((int(chunk_id), score))
     return sorted(scores, key=lambda item: item[1], reverse=True)
+
+
+def compact_preview(text: str, limit: int = 220) -> str:
+    preview = " ".join(str(text).split())
+    if len(preview) <= limit:
+        return preview
+    return preview[: limit - 3].rstrip() + "..."
 
 
 def direct_polity_fact(query: str) -> str | None:

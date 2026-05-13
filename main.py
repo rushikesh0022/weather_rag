@@ -53,15 +53,16 @@ def main() -> int:
         print(f"Startup error: {exc}", file=sys.stderr)
         return 1
 
-    print("Weather RAG CLI Agent")
-    print(f"LLM provider: {agent.llm.provider}:{agent.llm.model}")
-    print(f"RAG backend: {retriever.backend_name}")
-    print(f"Observability log: {settings.log_file}")
-    print("Type 'exit' or 'quit' to stop.\n")
+    agent.observer.print_header(
+        provider=agent.llm.provider,
+        model=agent.llm.model,
+        rag_backend=retriever.backend_name,
+        log_file=settings.log_file,
+    )
 
     while True:
         try:
-            user_input = input("You: ").strip()
+            user_input = input("You > ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nGoodbye.")
             return 0
